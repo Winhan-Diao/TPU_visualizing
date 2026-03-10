@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TPU Usage Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 150px;
+        }
+        
+        label {
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input[type="number"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            align-self: flex-end;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        #chart-container {
+            height: 600px;
+            margin-top: 20px;
+            width: 100%;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+        }
+        
+        .error {
+            color: red;
+            padding: 10px;
+            background-color: #ffecec;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TPU Usage Visualization</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="n-layers">Number of Layers:</label>
+                <input type="number" id="n-layers" value="24" min="1" max="100">
+            </div>
+            
+            <div class="control-group">
+                <label for="n-nodes">Number of Nodes:</label>
+                <input type="number" id="n-nodes" value="3" min="1" max="10">
+            </div>
+            
+            <div class="control-group">
+                <label for="batch-size">Batch Size:</label>
+                <input type="number" id="batch-size" value="32" min="1" max="100">
+            </div>
+            
+            <div class="control-group">
+                <label for="n-length">Array Length (N):</label>
+                <input type="number" id="n-length" value="3" min="1" max="10">
+            </div>
+            
+            <button id="run-btn">Run Simulation</button>
+        </div>
+        
+        <div id="error-container" style="display: none;"></div>
+        <div id="chart-container"></div>
+    </div>
+
+    <script>
+        // Initialize the echarts instance
+        let chart = echarts.init(document.getElementById('chart-container'));
+        
+        // Set default option
+        chart.setOption({
+            title: {
+                text: 'MAT and VPU Usage Over Time',
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'axis'
+            },
+            legend: {
+                data: ['MAT Usage', 'VPU Usage'],
+                top: '10%'
+            },
+            grid: {
+                left: '3%',
+                right: '4%',
+                bottom: '3%',
+                top: '20%',
+                containLabel: true
+            },
+            xAxis: {
+                type: 'category',
+                boundaryGap: false,
+                name: 'Time (Clock Cycles)',
+                nameLocation: 'middle',
+                nameGap: 30
+            },
+            yAxis: {
+                type: 'value',
+                name: 'Usage Ratio',
+                min: 0,
+                max: 1,
+                nameLocation: 'middle',
+                nameGap: 40
+            },
+            series: [
+                {
+                    name: 'MAT Usage',
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: {
+                        color: '#5470c6',
+                        width: 2
+                    }
+                },
+                {
+                    name: 'VPU Usage',
+                    type: 'line',
+                    smooth: true,
+                    lineStyle: {
+                        color: '#91cc75',
+                        width: 2
+                    }
+                }
+            ]
+        });
+        
+        // Handle run button click
+        document.getElementById('run-btn').addEventListener('click', runSimulation);
+        
+        // Add event listeners to input controls to run simulation on change
+        document.getElementById('n-layers').addEventListener('change', runSimulation);
+        document.getElementById('n-nodes').addEventListener('change', runSimulation);
+        document.getElementById('batch-size').addEventListener('change', runSimulation);
+        document.getElementById('n-length').addEventListener('change', runSimulation);
+        
+        // Also run simulation when inputs are changed via arrow keys or paste
+        document.getElementById('n-layers').addEventListener('input', debounce(runSimulation, 500));
+        document.getElementById('n-nodes').addEventListener('input', debounce(runSimulation, 500));
+        document.getElementById('batch-size').addEventListener('input', debounce(runSimulation, 500));
+        document.getElementById('n-length').addEventListener('input', debounce(runSimulation, 500));
+        
+        async function runSimulation() {
+            // Show loading indicator
+            chart.showLoading();
+            hideError();
+            
+            // Get parameters
+            const nLayers = document.getElementById('n-layers').value;
+            const nNodes = document.getElementById('n-nodes').value;
+            const batchSize = document.getElementById('batch-size').value;
+            const nLength = document.getElementById('n-length').value;
+            
+            try {
+                // Send request to backend
+                const response = await fetch('/api/run-simulation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        n_layers: parseInt(nLayers),
+                        n_nodes: parseInt(nNodes),
+                        batch_size: parseInt(batchSize),
+                        n_length: parseInt(nLength)
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update chart with new data
+                chart.setOption({
+                    xAxis: {
+                        data: data.timestamps.map(t => t.toString())
+                    },
+                    series: [
+                        {
+                            name: 'MAT Usage',
+                            data: data.mat_usage
+                        },
+                        {
+                            name: 'VPU Usage',
+                            data: data.vpu_usage
+                        }
+                    ]
+                });
+                
+            } catch (error) {
+                showError(`Error running simulation: ${error.message}`);
+                console.error('Error:', error);
+            } finally {
+                chart.hideLoading();
+            }
+        }
+        
+        // Debounce function to limit how often the simulation runs when typing
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error">${message}</div>`;
+            errorContainer.style.display = 'block';
+        }
+        
+        function hideError() {
+            document.getElementById('error-container').style.display = 'none';
+        }
+        
+        // Run initial simulation
+        window.onload = function() {
+            runSimulation();
+        };
+    </script>
+</body>
+</html>
