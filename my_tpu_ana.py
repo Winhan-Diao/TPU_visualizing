@@ -271,15 +271,21 @@ class tpu():
                                 already_overlapped = True
                                 overlapped_clks = total_cycles - t - 1 - len(self.mat.x_in[0])
                                 for to_node in range(len(weights[layer + 1])):
-                                    for _ in range(to_node + len(self.mat.x_in[0])):
-                                        self.mat.w_in[to_node].append(None)
+                                    self.mat.w_in[to_node].extend([None] * (to_node + len(self.mat.x_in[0]) - len(self.mat.w_in[to_node])))
                                     for from_node in range(len(weights[layer + 1][to_node])):
                                         self.mat.w_in[to_node].append(weights[layer + 1][to_node][from_node])            
                                 var0 = len(self.mat.x_in[0])
+                                n_extend_zero = 0
                                 for from_x in range(self.mat_len):
-                                    if from_x and not len(self.mat.x_in[from_x]) and self.mat.wxps[from_x][0][1] is not None:
-                                        self.mat.x_in[from_x].extend([(0., len(weights[layer + 1]))] * (from_x - len(self.mat.x_in[from_x]) + var0))
-                                        self.mat.x_in[from_x].append(None)
+                                    if from_x and not len(self.mat.x_in[from_x]) and self.mat.wxps[from_x - 1][0][1] is not None:
+                                        # var10 = len(self.mat.x_in[from_x])
+                                        if not n_extend_zero:
+                                            n_extend_zero = len(tuple(x for x in self.mat.x_in[from_x - 1] if x is not None)) + 1
+                                        self.mat.x_in[from_x].extend([(0., len(weights[layer]))] * n_extend_zero)
+                                        n_extend_zero += 1
+                                        self.mat.x_in[from_x].extend([None] * (from_x - len(self.mat.x_in[from_x]) + var0 + 1))
+                                        # self.mat.x_in[from_x].extend([(0., len(weights[layer + 1]))] * (from_x - len(self.mat.x_in[from_x]) + var0))
+                                        # self.mat.x_in[from_x].append(None)
                                     else:
                                         self.mat.x_in[from_x].extend([None] * (from_x + 1 - len(self.mat.x_in[from_x]) + var0))
                                 for from_x in range(len(xs_buffer)):
@@ -331,11 +337,6 @@ def run_simulation(n_layers=24, n_nodes=3, batch_size=32, n_length=3):
         np.random.randint(1, 2, size=(n_layers, n_nodes)).tolist(), 
         np.random.randint(1, 2, size=(batch_size, n_nodes)).tolist()
     )
-    return get_usage_data()
-
-# All unit can only step once per clk.
-if __name__ == "__main__":
-    # run xor once forwards and backwards    
     # tpu_ = tpu(n_length=10)
     # tpu_.forward(2, 
     #     [
@@ -351,14 +352,52 @@ if __name__ == "__main__":
     #         [0., 1.], 
     #         [1., 0.], 
     #         [1., 1.],
+    #         [0., 0.], 
+    #         [0., 1.], 
+    #         [1., 0.], 
+    #         [1., 1.],
+    #         [0., 0.], 
+    #         [0., 1.], 
+    #         [1., 0.], 
+    #         [1., 1.],
     #     ]
     # )
-    n_layers = 9
-    n_nodes = 10
-    batch_size = 16
-    n_length = 10
-    tpu_ = tpu(n_length=n_length)
-    tpu_.forward(n_layers, np.random.randint(1, 2, size=(n_layers, n_nodes, n_nodes)).tolist(), np.random.randint(1, 2, size=(n_layers, n_nodes)).tolist(), np.random.randint(1, 2, size=(batch_size, n_nodes)).tolist())
+    return get_usage_data()
+
+# All unit can only step once per clk.
+if __name__ == "__main__":
+    # run xor once forwards and backwards    
+    tpu_ = tpu(n_length=10)
+    tpu_.forward(2, 
+        [
+            [[-.579, .299], [.423, .091]], 
+            [[.296, .527], ]
+        ], 
+        [
+            [-.494, .189], 
+            [.636, ]
+        ],
+        [
+            [0., 0.], 
+            [0., 1.], 
+            [1., 0.], 
+            [1., 1.],
+            [0., 0.], 
+            [0., 1.], 
+            [1., 0.], 
+            [1., 1.],
+            [0., 0.], 
+            [0., 1.], 
+            [1., 0.], 
+            [1., 1.],
+        ]
+    )
+    # n_layers = 9
+    # n_nodes = 10
+    # batch_size = 16
+    # n_length = 10
+    # tpu_ = tpu(n_length=n_length)
+    # tpu_.forward(n_layers, np.random.randint(1, 2, size=(n_layers, n_nodes, n_nodes)).tolist(), np.random.randint(1, 2, size=(n_layers, n_nodes)).tolist(), np.random.randint(1, 2, size=(batch_size, n_nodes)).tolist())
     print(mat_usage_per_clk)
     print(vpu_usage_per_clk)
     detailed_per_clk_tmp_2 = pd.DataFrame(detailed_per_clk_tmp, columns=["clk", "type", "state"])
