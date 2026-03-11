@@ -16,6 +16,7 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
+            margin-bottom: 22px;
             background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
@@ -26,6 +27,10 @@
             text-align: center;
             color: #333;
             margin-bottom: 30px;
+        }
+
+        h2 {
+            margin: 0px;
         }
         
         .controls {
@@ -91,12 +96,28 @@
             border-radius: 4px;
             margin: 10px 0;
         }
+        
+        .pe-cell {
+            border: 2px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            align-items: center;
+            text-align: center;
+            font-size: 12px;
+            background-color: #f9f9f9;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>TPU Usage Visualization</h1>
-        
+
+    <div class="container">    
         <div class="controls">
             <div class="control-group">
                 <label for="n-layers">Number of Layers:</label>
@@ -120,9 +141,52 @@
             
             <button id="run-btn">Run Simulation</button>
         </div>
-        
+    </div>
+
+    <div class="container">    
+        <h1>TPU Usage Visualization</h1>
         <div id="error-container" style="display: none;"></div>
         <div id="chart-container"></div>
+    </div>
+
+    <div class="container">
+        <h1>TPU Data Visualization</h1>
+        
+        <!-- Combined visualization container -->
+        <div id="combined-visualization" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; align-items: start;">
+            <!-- W Input visualization container -->
+            <span></span>
+
+            <div id="w-in-container">
+                <h2 style="text-align: center;">W Input Queues State</h2>
+                <div id="w-in-visualization" style="display: flex; flex-direction: row; justify-content: baseline; width: 100%; gap: 5px"></div>
+            </div>
+            
+            <div id="x-in-container">
+                <h2 style="text-align: center;">X Input Queues State</h2>
+                <div id="x-in-visualization" style="display: flex; flex-direction: column; align-items: end; width: 100%; gap: 5px"></div>
+            </div>
+                
+                <!-- Matrix visualization container -->
+            <div id="matrix-container">
+                <h2 style="text-align: center;">PE Array State Visualization</h2>
+                <div id="matrix-visualization" style="display: grid; grid-template-columns: repeat(3, 122.5px); grid-gap: 5px; margin: 0px; justify-content: baseline;"></div>
+            </div>
+            <span></span>
+                <!-- VPU Pipeline visualization container - placed below PE array -->
+            <div id="vpu-container" style="width: 100%;">
+                <h2 style="text-align: center;">VPU Pipeline State</h2>
+                <div id="vpu-visualization" style="display: grid; grid-template-columns: repeat(3, 122.5px); grid-gap: 5px; margin: 0px; justify-content: baseline;"></div>
+            </div>
+        </div>
+        
+        <!-- Time control slider -->
+        <div style="width: 100%; max-width: 600px; margin: 20px auto; padding: 10px;">
+            <label for="time-slider" style="display: block; text-align: center; margin-bottom: 10px; font-weight: bold;">
+                Clock Cycle: <span id="current-time">0</span>
+            </label>
+            <input type="range" id="time-slider" min="0" max="0" value="0" style="width: 100%;">
+        </div>
     </div>
 
     <script>
@@ -250,12 +314,862 @@
                     ]
                 });
                 
+                // Load and process the detailed JSON file if specified in the response
+                if (data.details) {
+                    try {
+                        const detailsResponse = await fetch(data.details);
+                        if (detailsResponse.ok) {
+                            const detailsData = await detailsResponse.json();
+                            
+                            // Process the detailed data as needed
+                            console.log('Detailed simulation data loaded:', detailsData);
+                            
+                            // Initialize the detailed visualization with the data
+                            initializeDetailedVisualization(detailsData);
+                            
+                            // Delete the details file after successfully reading it
+                            try {
+                                await fetch(`/api/delete/${encodeURIComponent(data.details)}`, {
+                                    method: 'DELETE'
+                                });
+                                console.log('Details file deleted:', data.details);
+                            } catch (deleteError) {
+                                console.error('Error deleting details file:', deleteError);
+                            }
+                        } else {
+                            console.error(`Failed to load details file: ${data.details} with status ${detailsResponse.status}`);
+                        }
+                    } catch (detailsError) {
+                        console.error('Error loading detailed data:', detailsError);
+                    }
+                }
+                
+                // Load and process the x_in data if specified in the response
+                if (data.x_in) {
+                    try {
+                        const xInResponse = await fetch(data.x_in);
+                        if (xInResponse.ok) {
+                            const xInData = await xInResponse.json();
+                            
+                            // Process the x_in data as needed
+                            console.log('X In simulation data loaded:', xInData);
+                            
+                            // Initialize the x_in visualization with the data
+                            initializeXInVisualization(xInData);
+                            
+                            // Delete the x_in file after successfully reading it
+                            try {
+                                await fetch(`/api/delete/${encodeURIComponent(data.x_in)}`, {
+                                    method: 'DELETE'
+                                });
+                                console.log('X In file deleted:', data.x_in);
+                            } catch (deleteError) {
+                                console.error('Error deleting x_in file:', deleteError);
+                            }
+                        } else {
+                            console.error(`Failed to load x_in file: ${data.x_in} with status ${xInResponse.status}`);
+                        }
+                    } catch (xInError) {
+                        console.error('Error loading x_in data:', xInError);
+                    }
+                }
+                
+                // Load and process the w_in data if specified in the response
+                if (data.w_in) {
+                    try {
+                        const wInResponse = await fetch(data.w_in);
+                        if (wInResponse.ok) {
+                            const wInData = await wInResponse.json();
+                            
+                            // Process the w_in data as needed
+                            console.log('W In simulation data loaded:', wInData);
+                            
+                            // Initialize the w_in visualization with the data
+                            initializeWInVisualization(wInData);
+                            
+                            // Delete the w_in file after successfully reading it
+                            try {
+                                await fetch(`/api/delete/${encodeURIComponent(data.w_in)}`, {
+                                    method: 'DELETE'
+                                });
+                                console.log('W In file deleted:', data.w_in);
+                            } catch (deleteError) {
+                                console.error('Error deleting w_in file:', deleteError);
+                            }
+                        } else {
+                            console.error(`Failed to load w_in file: ${data.w_in} with status ${wInResponse.status}`);
+                        }
+                    } catch (wInError) {
+                        console.error('Error loading w_in data:', wInError);
+                    }
+                }
             } catch (error) {
                 showError(`Error running simulation: ${error.message}`);
                 console.error('Error:', error);
             } finally {
                 chart.hideLoading();
             }
+        }
+        
+        // Initialize detailed visualization with the loaded data
+        function initializeDetailedVisualization(detailsData) {
+            // Find all unique clock cycles (clks) in the data
+            const clks = new Set();
+            for (const key in detailsData) {
+                for (const clk in detailsData[key]) {
+                    clks.add(parseInt(clk));
+                }
+            }
+            const sortedClks = Array.from(clks).sort((a, b) => a - b);
+            
+            // Set up the time slider
+            const timeSlider = document.getElementById('time-slider');
+            const currentTimeDisplay = document.getElementById('current-time');
+            
+            if (sortedClks.length > 0) {
+                timeSlider.min = Math.min(...sortedClks);
+                timeSlider.max = Math.max(...sortedClks);
+                timeSlider.value = Math.min(...sortedClks);
+                currentTimeDisplay.textContent = Math.min(...sortedClks);
+            }
+            
+            // Visualize the matrix at the current time
+            visualizeMatrixAtTime(detailsData, parseInt(timeSlider.value));
+            
+            // Visualize the VPU pipelines at the current time
+            visualizeVpuAtTime(detailsData, parseInt(timeSlider.value));
+            
+            // Add event listener to the time slider
+            timeSlider.addEventListener('input', function() {
+                currentTimeDisplay.textContent = this.value;
+                visualizeMatrixAtTime(detailsData, parseInt(this.value));
+                visualizeVpuAtTime(detailsData, parseInt(this.value));
+            });
+            
+            // Store the data globally for access by the time slider event
+            window.currentDetailsData = detailsData;
+        }
+        
+        // Initialize X Input visualization with the loaded data
+        function initializeXInVisualization(xInData) {
+            // Find all unique clock cycles (clks) in the data
+            const sortedClks = Object.keys(xInData).map(Number).sort((a, b) => a - b);
+            
+            // Set up the time slider if it's not already set up
+            const timeSlider = document.getElementById('time-slider');
+            const currentTimeDisplay = document.getElementById('current-time');
+            
+            if (sortedClks.length > 0) {
+                // Only update the slider range if the xIn data has a wider range
+                const currentMin = parseInt(timeSlider.min);
+                const currentMax = parseInt(timeSlider.max);
+                
+                if (Math.min(...sortedClks) < currentMin) timeSlider.min = Math.min(...sortedClks);
+                if (Math.max(...sortedClks) > currentMax) timeSlider.max = Math.max(...sortedClks);
+                
+                currentTimeDisplay.textContent = timeSlider.value;
+            }
+            
+            // Visualize the x_in at the current time
+            visualizeXInAtTime(xInData, parseInt(timeSlider.value));
+            
+            // Store the data globally for access by the time slider event
+            window.currentXInData = xInData;
+        }
+        
+        // Initialize W Input visualization with the loaded data
+        function initializeWInVisualization(wInData) {
+            // Find all unique clock cycles (clks) in the data
+            const sortedClks = Object.keys(wInData).map(Number).sort((a, b) => a - b);
+            
+            // Set up the time slider if it's not already set up
+            const timeSlider = document.getElementById('time-slider');
+            const currentTimeDisplay = document.getElementById('current-time');
+            
+            if (sortedClks.length > 0) {
+                // Only update the slider range if the wIn data has a wider range
+                const currentMin = parseInt(timeSlider.min);
+                const currentMax = parseInt(timeSlider.max);
+                
+                if (Math.min(...sortedClks) < currentMin) timeSlider.min = Math.min(...sortedClks);
+                if (Math.max(...sortedClks) > currentMax) timeSlider.max = Math.max(...sortedClks);
+                
+                currentTimeDisplay.textContent = timeSlider.value;
+            }
+            
+            // Visualize the w_in at the current time
+            visualizeWInAtTime(wInData, parseInt(timeSlider.value));
+            
+            // Add event listener to the time slider to update all visualizations
+            if (!window.timeSliderInitialized) {
+                timeSlider.addEventListener('input', function() {
+                    currentTimeDisplay.textContent = this.value;
+                    
+                    if (window.currentDetailsData) {
+                        visualizeMatrixAtTime(window.currentDetailsData, parseInt(this.value));
+                        visualizeVpuAtTime(window.currentDetailsData, parseInt(this.value));
+                    }
+                    
+                    if (window.currentXInData) {
+                        visualizeXInAtTime(window.currentXInData, parseInt(this.value));
+                    }
+                    
+                    if (window.currentWInData) {
+                        visualizeWInAtTime(window.currentWInData, parseInt(this.value));
+                    }
+                });
+                
+                window.timeSliderInitialized = true;
+            }
+            
+            // Store the data globally for access by the time slider event
+            window.currentWInData = wInData;
+        }
+        
+        // Visualize the PE matrix at a specific time
+        function visualizeMatrixAtTime(detailsData, time) {
+            const matrixContainer = document.getElementById('matrix-visualization');
+            const currentTime = time.toString();
+            
+            // Determine the matrix size from the data (assuming square matrix)
+            let maxRow = 0;
+            let maxCol = 0;
+            
+            for (const key in detailsData) {
+                // Check if this key represents a PE component (pe_row_col_something)
+                const match = key.match(/pe_(\d+)_(\d+)_/);
+                if (match) {
+                    const row = parseInt(match[1]);
+                    const col = parseInt(match[2]);
+                    if (row > maxRow) maxRow = row;
+                    if (col > maxCol) maxCol = col;
+                }
+            }
+            
+            // Matrix dimensions (at least 1x1)
+            const rows = maxRow + 1;
+            const cols = maxCol + 1;
+            
+            // Clear the current matrix visualization
+            matrixContainer.innerHTML = '';
+            matrixContainer.style.gridTemplateColumns = `repeat(${cols}, 122.5px)`;
+            
+            // Create matrix cells for each PE
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < cols; j++) {
+                    // Create a cell for this PE
+                    const peCell = document.createElement('div');
+                    peCell.className = 'pe-cell';
+                    peCell.style.cssText = `
+                        width: 120px;
+                        height: 120px;
+                        border: 2px solid #ccc;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        text-align: center;
+                        font-size: 12px;
+                        background-color: #f9f9f9;
+                        position: relative;
+                    `;
+                    
+                    // Set the PE identifier
+                    peCell.innerHTML = `<strong>PE[${i}][${j}]</strong>`;
+                    
+                    // Create an SVG element for this PE
+                    const svgElement = createPeSvgElement(i, j, detailsData, currentTime);
+                    
+                    peCell.appendChild(svgElement);
+                    matrixContainer.appendChild(peCell);
+                }
+            }
+        }
+        
+        // Visualize the X Input queues at a specific time
+        function visualizeXInAtTime(xInData, time) {
+            const xInContainer = document.getElementById('x-in-visualization');
+            
+            // Clear the current x_in visualization
+            xInContainer.innerHTML = '';
+            
+            // Check if the time exists in the data
+            if (!xInData[time]) {
+                xInContainer.innerHTML = '<p>No data available for this clock cycle</p>';
+                return;
+            }
+            
+            // Get the x_in data for the current time
+            const xInForTime = xInData[time];
+            
+            // Create container for each queue
+            for (let queueIdx = 0; queueIdx < xInForTime.length; queueIdx++) {
+                const queueContainer = document.createElement('div');
+                // queueContainer.style.marginBottom = '20px';
+                queueContainer.style.cssText = `
+                    width: 520px;
+                    height: 120px;
+                    border: 2px solid #ccc;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                    font-size: 12px;
+                    background-color: #f9f9f9;
+                    position: relative;
+                `;
+                
+                // Add queue header
+                const queueHeader = document.createElement('div');
+                queueHeader.textContent = `Queue ${queueIdx}`;
+                queueHeader.style.fontWeight = 'bold';
+                // queueHeader.style.marginBottom = '10px';
+                queueContainer.appendChild(queueHeader);
+                
+                // Create an SVG element for this queue
+                const svgElement = createXInSvgElement(queueIdx, xInForTime[queueIdx]);
+                
+                queueContainer.appendChild(svgElement);
+                xInContainer.appendChild(queueContainer);
+            }
+        }
+        
+        // Visualize the W Input queues at a specific time
+        function visualizeWInAtTime(wInData, time) {
+            const wInContainer = document.getElementById('w-in-visualization');
+            
+            // Clear the current w_in visualization
+            wInContainer.innerHTML = '';
+            
+            // Check if the time exists in the data
+            if (!wInData[time]) {
+                wInContainer.innerHTML = '<p style="text-align: center; width: 100%;">No data available for this clock cycle</p>';
+                return;
+            }
+            
+            // Get the w_in data for the current time
+            const wInForTime = wInData[time];
+            
+            // Create container for each queue
+            for (let queueIdx = 0; queueIdx < wInForTime.length; queueIdx++) {
+                const queueContainer = document.createElement('div');
+                queueContainer.style.cssText = `
+                    width: 120px;
+                    height: 520px;
+                    border: 2px solid #ccc;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                    font-size: 12px;
+                    background-color: #f9f9f9;
+                    position: relative;
+                `;
+                
+                // Add queue header
+                const queueHeader = document.createElement('div');
+                queueHeader.textContent = `W Queue ${queueIdx}`;
+                queueHeader.style.fontWeight = 'bold';
+                queueHeader.style.marginBottom = '10px';
+                queueContainer.appendChild(queueHeader);
+                
+                // Create an SVG element for this queue (rotated version for vertical orientation)
+                const svgElement = createWInSvgElement(queueIdx, wInForTime[queueIdx]);
+                
+                queueContainer.appendChild(svgElement);
+                wInContainer.appendChild(queueContainer);
+            }
+        }
+        
+        // Create an SVG element for a XIn queue with updated colors based on state
+        function createXInSvgElement(queueIdx, queueData) {
+            // Create the SVG element
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("width", "500");
+            svg.setAttribute("height", "100");
+            svg.setAttribute("viewBox", "0 0 132.29167 26.458334");
+            svg.setAttribute("style", "margin: 5px;");
+            
+            // Create SVG namespace declaration
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            
+            // Background rectangle
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            bgRect.setAttribute("style", "fill:#e6e6e6;stroke:none;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            bgRect.setAttribute("d", "m 13.229167,1.3229167 117.739583,0 V 25.135417 l -129.6458333,0 V 1.3229167 Z");
+            bgRect.setAttribute("id", "path5");
+            bgRect.setAttribute("inkscape:label", "bg");
+            bgRect.setAttribute("sodipodi:nodetypes", "cccccc");
+            svg.appendChild(bgRect);
+            
+            // Border line
+            const var10000 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            var10000.setAttribute("style", "display:inline;fill:#e6e6e6;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var10000.setAttribute("d", "M 132.29167,12.56771 H 1.8520834");
+            svg.appendChild(var10000);
+            
+            const borderPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            borderPath.setAttribute("style", "display:inline;fill:#e6e6e6;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            borderPath.setAttribute("d", "M 1.3229167,2.6458334 H 124.35417 l 5.29167,9.9645606 -5.29167,11.202107 H 1.3229167");
+            svg.appendChild(borderPath);
+            
+            const var100 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var100.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var100.setAttribute("cx", "2.6458335");
+            var100.setAttribute("cy", "12.56771");
+            var100.setAttribute("r", "0.26458332");
+            svg.appendChild(var100);
+            
+            const var200 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var200.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var200.setAttribute("cx", "5.291667");
+            var200.setAttribute("cy", "12.56771");
+            var200.setAttribute("r", "0.26458332");
+            svg.appendChild(var200);
+            
+            const var300 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var300.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var300.setAttribute("cx", "7.9375005");
+            var300.setAttribute("cy", "12.56771");
+            var300.setAttribute("r", "0.26458332");
+            svg.appendChild(var300);
+            
+            // Elements in Layer 2 - the queue elements
+            const layer2 = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            layer2.setAttribute("id", "layer2");
+            layer2.setAttribute("inkscape:label", "Layer 2");
+            layer2.setAttribute("style", "display:inline");
+            
+            // Define positions for the queue elements
+            const positions = [
+                {x: 120.38542, y: 3.9687502, width: 1.32292, height: 18.520834},
+                {x: 113.77084, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 107.15625, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 100.54167, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 93.927086, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 87.312502, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 80.697919, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 74.083336, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 67.468752, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 60.854167, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 54.239584, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 47.625001, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 41.010417, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 34.395835, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 27.781251, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 21.166667, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 14.552083, y: 3.9687501, width: 1.32292, height: 18.520834}
+            ];
+            
+            // Create up to 17 queue elements
+            for (let i = 0; i < 17; i++) {
+                const position = positions[i];
+                if (!position) continue;  // Skip if no position available
+                
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                
+                // Set the path data
+                const pathData = `m ${position.x},${position.y} h ${position.width} v ${position.height} h -3.96875 v -${position.height} z`;
+                rect.setAttribute("d", pathData);
+                
+                // Set attributes
+                rect.setAttribute("id", `x_in_queue_${queueIdx}_element_${i}`);
+                rect.setAttribute("sodipodi:nodetypes", "cccccc");
+                rect.setAttribute("inkscape:label", `${i}`);
+                
+                // Set color based on state value in queueData
+                let fillColor = "#ffffff"; // Default to transparent
+                let strokeColor = "#ffffff"; // Default to transparent
+                
+                if (queueData && i < queueData.length) {
+                    const stateValue = queueData[i];
+                    fillColor = getStateColorFromValue(stateValue);
+                    strokeColor = "#808080"; // Normal stroke when filled
+                }
+                
+                rect.setAttribute("style", `display:inline;fill:${fillColor};stroke:${strokeColor};stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round`);
+                
+                layer2.appendChild(rect);
+            }
+            
+            svg.appendChild(layer2);
+            
+            return svg;
+        }
+        
+        // Create an SVG element for a WIn queue with updated colors based on state
+        function createWInSvgElement(queueIdx, queueData) {
+            // Create the SVG element
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("width", "100");
+            svg.setAttribute("height", "500");
+            svg.setAttribute("viewBox", "0 0 26.458334 132.29167");
+            svg.setAttribute("style", "margin: 5px;");
+            
+            // Create SVG namespace declaration
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            
+            // Background rectangle
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            bgRect.setAttribute("style", "display:inline;fill:#e6e6e6;stroke:none;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            bgRect.setAttribute("d", "M 13.229167,1.3229167 H 130.96875 V 25.135417 H 1.3229167 V 1.3229167 Z");
+            bgRect.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            bgRect.setAttribute("id", "path5");
+            bgRect.setAttribute("inkscape:label", "bg");
+            bgRect.setAttribute("sodipodi:nodetypes", "cccccc");
+            svg.appendChild(bgRect);
+            
+            // Border line
+            const var90 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            var90.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var90.setAttribute("d", "M 19.843751,132.29167 V 1.8520847");
+            var90.setAttribute("sodipodi:nodetypes", "ccccc");
+            svg.appendChild(var90);
+            
+            const borderPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            borderPath.setAttribute("style", "display:inline;fill:#e6e6e6;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            borderPath.setAttribute("d", "M 1.3229167,2.6458334 H 124.35417 l 5.29167,3.9687499 -5.29167,17.1979177 H 1.3229167");
+            borderPath.setAttribute("sodipodi:nodetypes", "ccccc");
+            borderPath.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(borderPath);
+
+            const var50 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var50.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var50.setAttribute("cx", "2.6458335");
+            var50.setAttribute("cy", "12.56771");
+            var50.setAttribute("r", "0.26458332");
+            var50.setAttribute("sodipodi:nodetypes", "ccccc");
+            var50.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(var50);
+            
+            const var60 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var60.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var60.setAttribute("cx", "5.291667");
+            var60.setAttribute("cy", "12.56771");
+            var60.setAttribute("r", "0.26458332");
+            var60.setAttribute("sodipodi:nodetypes", "ccccc");
+            var60.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(var60);
+            
+            const var70 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            var70.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var70.setAttribute("cx", "7.9375005");
+            var70.setAttribute("cy", "12.56771");
+            var70.setAttribute("r", "0.26458332");
+            var70.setAttribute("sodipodi:nodetypes", "ccccc");
+            var70.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(var70);
+            
+            // Elements in Layer 2 - the queue elements
+            const layer2 = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            layer2.setAttribute("id", "layer2");
+            layer2.setAttribute("inkscape:label", "Layer 2");
+            layer2.setAttribute("style", "display:inline");
+            
+            // Define positions for the queue elements (same as in w_in.svg)
+            const positions = [
+                {x: 120.38542, y: 3.9687502, width: 1.32292, height: 18.520834},
+                {x: 113.77084, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 107.15625, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 100.54167, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 93.927086, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 87.312502, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 80.697919, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 74.083336, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 67.468752, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 60.854167, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 54.239584, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 47.625001, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 41.010417, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 34.395835, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 27.781251, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 21.166667, y: 3.9687501, width: 1.32292, height: 18.520834},
+                {x: 14.552083, y: 3.9687501, width: 1.32292, height: 18.520834}
+            ];
+            
+            // Create up to 17 queue elements
+            for (let i = 0; i < 17; i++) {
+                const position = positions[i];
+                if (!position) continue;  // Skip if no position available
+                
+                const rect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                
+                // Set the path data
+                const pathData = `m ${position.x},${position.y} h ${position.width} v ${position.height} h -3.96875 v -${position.height} z`;
+                rect.setAttribute("d", pathData);
+                
+                // Apply rotation transform to match w_in.svg
+                rect.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+                
+                // Set attributes
+                rect.setAttribute("id", `w_in_queue_${queueIdx}_element_${i}`);
+                rect.setAttribute("sodipodi:nodetypes", "cccccc");
+                rect.setAttribute("inkscape:label", `${i}`);
+                
+                // Set color based on state value in queueData
+                let fillColor = "#ffffffff"; // Default to transparent
+                let strokeColor = "#ffffffff"; // Default to transparent
+                
+                if (queueData && i < queueData.length) {
+                    const stateValue = queueData[i];
+                    fillColor = getStateColorFromValue(stateValue);
+                    strokeColor = "#808080"; // Normal stroke when filled
+                }
+                
+                rect.setAttribute("style", `display:inline;fill:${fillColor};stroke:${strokeColor};stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round`);
+                
+                layer2.appendChild(rect);
+            }
+            
+            svg.appendChild(layer2);
+            
+            return svg;
+        }
+        
+        // Helper function to get color from state value directly
+        function getStateColorFromValue(value) {
+            if (value === 0) return "FireBrick";  // blue
+            if (value === 1) return "SpringGreen";  // green
+            if (value === 2) return "SlateGray";  // gray
+            
+            // Default color for undefined/null values (transparent)
+            return "#ffffffff";
+        }
+        
+        // Helper function to get color from detailed data
+        function getStateColorWithSpec(detailsData, key, currentTime) {
+            const value = detailsData[key] && detailsData[key][currentTime] !== undefined ? 
+                         detailsData[key][currentTime] : null;
+            
+            return getStateColorFromValue(value);
+        }
+
+        // Visualize the VPU Pipelines at a specific time
+        function visualizeVpuAtTime(detailsData, time) {
+            const vpuContainer = document.getElementById('vpu-visualization');
+            const currentTime = time.toString();
+            
+            // Determine the number of VPU pipelines from the data
+            let maxPipeline = 0;
+            
+            for (const key in detailsData) {
+                // Check if this key represents a VPU component (vpu_pipeline_something)
+                const match = key.match(/vpu_(\d+)_/);
+                if (match) {
+                    const pipeline = parseInt(match[1]);
+                    if (pipeline > maxPipeline) maxPipeline = pipeline;
+                }
+            }
+            
+            // VPU pipeline count (at least 1)
+            const pipelineCount = maxPipeline + 1;
+            
+            // Clear the current VPU visualization
+            vpuContainer.innerHTML = '';
+            vpuContainer.style.gridTemplateColumns = `repeat(${pipelineCount > 3 ? pipelineCount : 3}, 122.5px)`;
+            
+            // Create visualization for each VPU pipeline
+            for (let i = 0; i < pipelineCount; i++) {
+                // Create a container for this VPU pipeline
+                const vpuCell = document.createElement('div');
+                vpuCell.className = 'vpu-cell';
+                vpuCell.style.cssText = `
+                    width: 120px;
+                    height: 120px;
+                    border: 2px solid #ccc;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    text-align: center;
+                    font-size: 12px;
+                    background-color: #f9f9f9;
+                    position: relative;
+                `;
+                
+                // Set the VPU identifier
+                vpuCell.innerHTML = `<strong>VPU[${i}]</strong>`;
+                
+                // Create an SVG element for this VPU pipeline
+                const svgElement = createVpuSvgElement(i, detailsData, currentTime);
+                
+                vpuCell.appendChild(svgElement);
+                vpuContainer.appendChild(vpuCell);
+            }
+        }
+        
+        // Create an SVG element for a VPU pipeline with updated colors based on state
+        function createVpuSvgElement(pipelineIdx, detailsData, currentTime) {
+            // Create the SVG element
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("width", "100");
+            svg.setAttribute("height", "120");
+            svg.setAttribute("viewBox", "0 0 26.458334 31.750001");
+            svg.setAttribute("style", "margin: 5px;");
+            
+            // Create SVG namespace declaration
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            
+            // Background rectangle
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            bgRect.setAttribute("style", "display:inline;fill:#e6e6e6;stroke:none;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            bgRect.setAttribute("d", "m 25.135417,13.229167 1e-6,17.197917 H 1.3229167 l 3e-7,-29.1041673 h 23.8125 z");
+            bgRect.setAttribute("id", "path5");
+            bgRect.setAttribute("inkscape:label", "bg");
+            bgRect.setAttribute("sodipodi:nodetypes", "cccccc");
+            svg.appendChild(bgRect);
+            
+            // Vertical separator line
+            const vertLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            vertLine.setAttribute("style", "display:inline;fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            vertLine.setAttribute("d", "M 8.5854663,29.368751 V 0");
+            vertLine.setAttribute("id", "path7");
+            svg.appendChild(vertLine);
+            
+            // reg_d_leakyrelu rectangle
+            const regDLeakyRelu = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regDLeakyRelu.setAttribute("style", "display:inline;fill:" + getStateColorWithSpec(detailsData, `vpu_${pipelineIdx}_reg_d_leakyrelu`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regDLeakyRelu.setAttribute("d", "m 26.458332,3.9687502 2.910419,5.2916665 0,7.9375003 0,5.291667 -5.556249,0 V 3.9687502 Z");
+            regDLeakyRelu.setAttribute("id", "reg_d_leakyrelu");
+            regDLeakyRelu.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(regDLeakyRelu);
+            
+            // reg_mse rectangle
+            const regMse = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regMse.setAttribute("style", "display:inline;fill:" + getStateColorWithSpec(detailsData, `vpu_${pipelineIdx}_reg_mse`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regMse.setAttribute("d", "m 19.843752,3.9687501 h 1.32292 V 22.489584 h -3.96875 V 3.9687501 Z");
+            regMse.setAttribute("id", "reg_mse");
+            regMse.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(regMse);
+            
+            // reg_leakyrelu rectangle
+            const regLeakyRelu = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regLeakyRelu.setAttribute("style", "display:inline;fill:" + getStateColorWithSpec(detailsData, `vpu_${pipelineIdx}_reg_leakyrelu`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regLeakyRelu.setAttribute("d", "m 13.229162,3.9687501 h 1.32292 V 22.489584 h -3.96875 V 3.9687501 Z");
+            regLeakyRelu.setAttribute("id", "reg_leakyrelu");
+            regLeakyRelu.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(regLeakyRelu);
+            
+            // reg_bias rectangle
+            const regBias = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regBias.setAttribute("style", "display:inline;fill:" + getStateColorWithSpec(detailsData, `vpu_${pipelineIdx}_reg_bias`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regBias.setAttribute("d", "m 6.6145821,3.9687501 h 1.32292 V 22.489584 H 3.9687501 V 3.9687501 Z");
+            regBias.setAttribute("id", "reg_bias");
+            regBias.setAttribute("transform", "rotate(90,13.229167,13.229167)");
+            svg.appendChild(regBias);
+            
+            return svg;
+        }
+        
+        // Create an SVG element for a PE with updated colors based on state
+        function createPeSvgElement(row, col, detailsData, currentTime) {
+            // Create the SVG element
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("width", "100");
+            svg.setAttribute("height", "100");
+            svg.setAttribute("viewBox", "0 0 26.458334 26.458334");
+            svg.setAttribute("style", "margin: 5px;");
+            
+            // Create SVG namespace declaration
+            svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            
+            // Background rectangle
+            const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            bgRect.setAttribute("style", "fill:#e6e6e6;stroke:none;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            bgRect.setAttribute("d", "m 13.229167,1.3229167 h 11.90625 V 25.135417 H 1.3229167 V 1.3229167 Z");
+            bgRect.setAttribute("id", "path5");
+            svg.appendChild(bgRect);
+            
+            // Vertical separator line
+            const vertLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            vertLine.setAttribute("style", "fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            vertLine.setAttribute("d", "M 19.050001,26.466667 V 0.00833333");
+            // vertLine.setAttribute("transform", "translate(0.66145815)");
+            svg.appendChild(vertLine);
+
+            const var1000 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            var1000.setAttribute("style", "fill:none;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var1000.setAttribute("d", "M 8.5989585,0 V 2.6458333 H 2.6458333 V 21.166667 h 5.9531251");
+            svg.appendChild(var1000);
+
+            const var3000 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            var3000.setAttribute("style", "fill:none;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var3000.setAttribute("d", "m 7.9375004,8.5989585 -2e-7,17.8593745");
+            var3000.setAttribute("transform", "translate(0.66145815)");
+            svg.appendChild(var3000);
+
+            // Horizontal separator line
+            const horizLine = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            horizLine.setAttribute("style", "fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            horizLine.setAttribute("d", "M 26.458334,12.56771 H 0");
+            svg.appendChild(horizLine);
+            
+            const var2000 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            var2000.setAttribute("style", "fill:#808080;stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            var2000.setAttribute("d", "M 14.552084,6.6145835 H 11.90625");
+            var2000.setAttribute("transform", "translate(0.66145815)");
+            svg.appendChild(var2000);
+            
+            // Wire X circle
+            const wireXCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            wireXCircle.setAttribute("style", "fill:" + getStateColor(detailsData, `pe_${row}_${col}_wire_x`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            wireXCircle.setAttribute("cx", "7.9375005");
+            wireXCircle.setAttribute("cy", "12.56771");
+            wireXCircle.setAttribute("r", "2.6458333");
+            wireXCircle.setAttribute("transform", "translate(0.66145815)");
+            wireXCircle.setAttribute("id", "wire_x");
+            svg.appendChild(wireXCircle);
+            
+            // Reg W Used rectangle
+            const regWUsed = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regWUsed.setAttribute("style", "fill:" + getStateColor(detailsData, `pe_${row}_${col}_reg_w_used`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regWUsed.setAttribute("d", "M 5.2916667,4.6302084 H 3.9687501 V 8.5989587 H 11.906251 V 4.6302086 Z");
+            regWUsed.setAttribute("transform", "translate(0.66145815)");
+            regWUsed.setAttribute("id", "reg_w_used");
+            svg.appendChild(regWUsed);
+            
+            // Reg W Pass rectangle
+            const regWPass = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            regWPass.setAttribute("style", "fill:" + getStateColor(detailsData, `pe_${row}_${col}_reg_w_pass`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            regWPass.setAttribute("d", "m 15.875,4.6302086 h -1.322916 v 3.9687505 h 7.9375 V 4.6302088 Z");
+            regWPass.setAttribute("transform", "translate(0.66145815)");
+            regWPass.setAttribute("id", "reg_w_pass");
+            svg.appendChild(regWPass);
+            
+            // Wire P triangle
+            const wireP = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            wireP.setAttribute("style", "fill:" + getStateColor(detailsData, `pe_${row}_${col}_wire_p`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            wireP.setAttribute("d", "M 6.6145973,18.520834 H 5.2916807 v 5.291667 l 5.2916673,-5.291667 z");
+            wireP.setAttribute("transform", "translate(0.66145815)");
+            wireP.setAttribute("id", "wire_p");
+            svg.appendChild(wireP);
+            
+            // Wire W rectangle
+            const wireW = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            wireW.setAttribute("style", "fill:" + getStateColor(detailsData, `pe_${row}_${col}_wire_w`, currentTime) + ";stroke:#808080;stroke-width:0.396875;stroke-linecap:round;stroke-linejoin:round");
+            wireW.setAttribute("d", "m 21.034375,15.213544 v -1.322917 h -3.96875 v 7.9375 h 3.96875 z");
+            wireW.setAttribute("id", "wire_w");
+            svg.appendChild(wireW);
+            
+            return svg;
+        }
+        
+        // Get color based on state value
+        function getStateColor(detailsData, key, currentTime) {
+            const value = detailsData[key] && detailsData[key][currentTime] !== undefined ? 
+                         detailsData[key][currentTime] : null;
+            
+            return getStateColorFromValue(value);
+        }
+        
+        // Get color based on state value with special handling for VPU components
+        function getStateColorWithSpec(detailsData, key, currentTime) {
+            const value = detailsData[key] && detailsData[key][currentTime] !== undefined ? 
+                         detailsData[key][currentTime] : null;
+            
+            return getStateColorFromValue(value);
         }
         
         // Debounce function to limit how often the simulation runs when typing

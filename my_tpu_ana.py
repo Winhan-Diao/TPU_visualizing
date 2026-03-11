@@ -1,12 +1,26 @@
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Union
 from copy import deepcopy
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import json
+from datetime import datetime
+import random
 
 mat_usage_per_clk = []
 vpu_usage_per_clk = []
+global_clk = 0
+detailed_per_clk_tmp = []
+detailed_per_clk = pd.DataFrame([])
+x_in_per_clk: List[List[List[Optional[float]]]] = []
+w_in_per_clk: List[List[List[Optional[float]]]] = []
+
+def simplify_cast(x: Optional[float]):
+    if x is None:
+        return 2
+    if x:
+        return 1
+    return 0
 
 class pe():
     # weight to forward to the next PE
@@ -50,6 +64,10 @@ class systolic_matrix():
         self.w_in = [[] for _ in range(n_length)]
     
     def clk(self) -> List[Optional[float]]:
+        x_in_record = [[simplify_cast(x[0] if x is not None else None) for x in l] for l in self.x_in]
+        x_in_per_clk.append(x_in_record)
+        w_in_record = [[simplify_cast(w) for w in l] for l in self.w_in]
+        w_in_per_clk.append(w_in_record)
         mat_usage = 0
         prev_wxps = deepcopy(self.wxps)
         for i in range(1, self.n_length):
@@ -85,9 +103,14 @@ class systolic_matrix():
                     # Other rows get partial sum from top neighbor
                     psum_input = prev_wxps[i-1][j][2]
                 # Clock the PE
-                self.wxps[i][j] = self.pes[i][j].clk(x_input, weight_input, psum_input)
+                self.wxps[i][j] = self.pes[i][j].clk(x_input, weight_input if i == 0 else self.wxps[i-1][j][0], psum_input)
                 if self.wxps[i][j][2] is not None:
                     mat_usage += 1
+                detailed_per_clk_tmp.append((global_clk, f"pe_{i}_{j}_wire_w", simplify_cast(self.wxps[i][j][0])))
+                detailed_per_clk_tmp.append((global_clk, f"pe_{i}_{j}_wire_x", simplify_cast(self.wxps[i][j][1][0] if self.wxps[i][j][1] is not None else None)))
+                detailed_per_clk_tmp.append((global_clk, f"pe_{i}_{j}_wire_p", simplify_cast(self.wxps[i][j][2])))
+                detailed_per_clk_tmp.append((global_clk, f"pe_{i}_{j}_reg_w_used", simplify_cast(self.pes[i][j].reg_time)))
+                detailed_per_clk_tmp.append((global_clk, f"pe_{i}_{j}_reg_w_pass", simplify_cast(self.pes[i][j].reg_pass)))
         mat_usage /= self.n_length * self.n_length
         mat_usage_per_clk.append(mat_usage)
         # Return the partial sums from the bottom row
@@ -160,6 +183,10 @@ class vpu():
         outputs = []
         for i, pipeline in enumerate(self.pipelines):
             outputs.append(pipeline.clk(inputs[i] if i < len(inputs) else None, None, None))
+            detailed_per_clk_tmp.append((global_clk, f"vpu_{i}_reg_bias", simplify_cast(pipeline.reg_bias)))
+            detailed_per_clk_tmp.append((global_clk, f"vpu_{i}_reg_leakyrelu", simplify_cast(pipeline.reg_leakyrelu)))
+            detailed_per_clk_tmp.append((global_clk, f"vpu_{i}_reg_mse", simplify_cast(pipeline.reg_mse)))
+            detailed_per_clk_tmp.append((global_clk, f"vpu_{i}_reg_d_leakyrelu", simplify_cast(pipeline.reg_d_leakyrelu)))
         vpu_usage_per_clk.append(sum(p.vpu_pipeline_usage for p in self.pipelines) / len(self.pipelines))
         return outputs
 
@@ -175,6 +202,8 @@ class tpu():
         self.reg_mat_outputs = [None] * n_length
         
     def clk(self):
+        global global_clk
+        global_clk += 1
         reg_mat_outputs = self.mat.clk()
         vpu_outputs = self.vpu_.clk(reg_mat_outputs)
         # print(reg_mat_outputs, "->", vpu_outputs)       # outputs
@@ -265,17 +294,32 @@ class tpu():
 
 def get_usage_data():
     """Returns the usage data for MAT and VPU in a JSON serializable format"""
+    file_name_prefix = f"{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{random.randint(0, 99999_99999):010d}"
+    detailed_per_clk_file_name = f"tmp/{file_name_prefix}_details.json"
+    detailed_per_clk_tmp_2 = pd.DataFrame(detailed_per_clk_tmp, columns=["clk", "type", "state"])
+    detailed_per_clk = detailed_per_clk_tmp_2.pivot_table(index="clk", columns=["type"], values="state").astype(np.int8)
+    detailed_per_clk.to_json("./public/" + detailed_per_clk_file_name)
+    x_in_per_clk_file_name = f"tmp/{file_name_prefix}_x_in.json"
+    w_in_per_clk_file_name = f"tmp/{file_name_prefix}_w_in.json"
+    with open("./public/" + x_in_per_clk_file_name, "w", encoding="utf-8") as f:
+        json.dump(x_in_per_clk, f, ensure_ascii=False, indent=2)
+    with open("./public/" + w_in_per_clk_file_name, "w", encoding="utf-8") as f:
+        json.dump(w_in_per_clk, f, ensure_ascii=False, indent=2)
     return {
         "mat_usage": mat_usage_per_clk,
         "vpu_usage": vpu_usage_per_clk,
-        "timestamps": list(range(len(mat_usage_per_clk)))  # Assuming each clock cycle is 1 time unit
+        "timestamps": list(range(len(mat_usage_per_clk))),  # Assuming each clock cycle is 1 time unit
+        "details": detailed_per_clk_file_name,
+        "x_in": x_in_per_clk_file_name,
+        "w_in": w_in_per_clk_file_name
     }
 
 def reset_usage_data():
     """Resets the usage data lists"""
-    global mat_usage_per_clk, vpu_usage_per_clk
+    global mat_usage_per_clk, vpu_usage_per_clk, global_clk
     mat_usage_per_clk = []
     vpu_usage_per_clk = []
+    global_clk = 0
 
 def run_simulation(n_layers=24, n_nodes=3, batch_size=32, n_length=3):
     """Runs a simulation with given parameters"""
@@ -283,9 +327,9 @@ def run_simulation(n_layers=24, n_nodes=3, batch_size=32, n_length=3):
     tpu_ = tpu(n_length=n_length)
     tpu_.forward(
         n_layers, 
-        np.random.randint(0, 1, size=(n_layers, n_nodes, n_nodes)).tolist(), 
-        np.random.randint(0, 1, size=(n_layers, n_nodes)).tolist(), 
-        np.random.randint(0, 1, size=(batch_size, n_nodes)).tolist()
+        np.random.randint(1, 2, size=(n_layers, n_nodes, n_nodes)).tolist(), 
+        np.random.randint(1, 2, size=(n_layers, n_nodes)).tolist(), 
+        np.random.randint(1, 2, size=(batch_size, n_nodes)).tolist()
     )
     return get_usage_data()
 
@@ -310,13 +354,16 @@ if __name__ == "__main__":
     #     ]
     # )
     n_layers = 9
-    n_nodes = 3
+    n_nodes = 10
     batch_size = 16
     n_length = 10
     tpu_ = tpu(n_length=n_length)
-    tpu_.forward(n_layers, np.random.randint(0, 1, size=(n_layers, n_nodes, n_nodes)).tolist(), np.random.randint(0, 1, size=(n_layers, n_nodes)).tolist(), np.random.randint(0, 1, size=(batch_size, n_nodes)).tolist())
+    tpu_.forward(n_layers, np.random.randint(1, 2, size=(n_layers, n_nodes, n_nodes)).tolist(), np.random.randint(1, 2, size=(n_layers, n_nodes)).tolist(), np.random.randint(1, 2, size=(batch_size, n_nodes)).tolist())
     print(mat_usage_per_clk)
     print(vpu_usage_per_clk)
+    detailed_per_clk_tmp_2 = pd.DataFrame(detailed_per_clk_tmp, columns=["clk", "type", "state"])
+    detailed_per_clk = detailed_per_clk_tmp_2.pivot_table(index="clk", columns=["type"], values="state")
+    detailed_per_clk_json = detailed_per_clk.to_json("./tmp.json", indent=2)
     fig = plt.figure(dpi=200, figsize=(15, 10))
     ax = fig.add_subplot(111)
     ax.plot(mat_usage_per_clk)[0].set_label("MAT")

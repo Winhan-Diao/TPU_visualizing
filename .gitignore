@@ -1,2 +1,6 @@
 node_modules/
 __pycache__/
+my_tpu_ana_legacy.py
+my_tpu_ana_legacy_2.py
+my_tpu_ana_legacy_3.py
+public/tmp/*

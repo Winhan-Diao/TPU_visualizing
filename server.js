@@ -1,7 +1,9 @@
 const express = require('express');
 const { spawn } = require('child_process');
+const { animate } = require('animejs');
 const path = require('path');
 const cors = require('cors');
+const fs = require('fs'); // Added for file system operations
 
 const app = express();
 const PORT = process.env.PORT || 25565;
@@ -50,6 +52,35 @@ app.post('/api/run-simulation', (req, res) => {
         } else {
             res.status(500).json({ error: 'Python script exited with error code: ' + code });
         }
+    });
+});
+
+// Endpoint to delete the details file after it's been read
+app.delete('/api/delete/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.join(__dirname, 'public', filename);
+    
+    // Security check to prevent directory traversal
+    const publicDir = path.resolve(__dirname, 'public');
+    const resolvedPath = path.resolve(filePath);
+    
+    if (!resolvedPath.startsWith(publicDir)) {
+        return res.status(400).json({ error: 'Invalid file path' });
+    }
+    
+    fs.unlink(filePath, (err) => {
+        if (err) {
+            if (err.code === 'ENOENT') {
+                // File doesn't exist, which is fine
+                console.log(`File ${filePath} was already deleted or never existed`);
+                return res.status(200).json({ message: 'File already deleted or does not exist' });
+            } else {
+                console.error('Error deleting file:', err);
+                return res.status(500).json({ error: 'Could not delete file' });
+            }
+        }
+        console.log(`Successfully deleted file: ${filePath}`);
+        res.status(200).json({ message: 'File deleted successfully' });
     });
 });
 
